@@ -25,6 +25,10 @@ locals {
 # ネットワーク
 resource "docker_network" "this" {
   name = "${local.environment}_network"
+  ipam_config {
+    subnet  = "172.20.0.0/16"
+    gateway = "172.20.0.1"
+  }
 }
 
 # Dockerイメージのビルド
@@ -45,8 +49,14 @@ resource "docker_container" "flask_app" {
   name  = "flask-app"
   image = docker_image.flask_app.image_id
 
+  labels {
+    label = "environment"
+    value = local.environment
+  }
+
   networks_advanced {
-    name = docker_network.this.name
+    name         = docker_network.this.name
+    ipv4_address = "172.20.0.10"
   }
 
   ports {
@@ -69,8 +79,14 @@ resource "docker_container" "mysql" {
   name  = "db"
   image = docker_image.mysql.image_id
 
+  labels {
+    label = "environment"
+    value = local.environment
+  }
+
   networks_advanced {
-    name = docker_network.this.name
+    name         = docker_network.this.name
+    ipv4_address = "172.20.0.20"
   }
 
   env = [
