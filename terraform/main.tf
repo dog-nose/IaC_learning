@@ -9,40 +9,62 @@ terraform {
   }
 }
 
-
 provider "docker" {
   # ローカルDockerに接続
 }
 
-locals {
-  environment      = "development"
-  db_root_password = "root"
-  db_name          = "development_db"
-  db_user          = "development_user"
-  db_password      = "development_password"
+# =============================================================================
+# 環境モジュール呼び出し
+# =============================================================================
+
+module "dev" {
+  source = "./modules/environment"
+
+  environment     = "development"
+  subnet          = "172.20.0.0/24"
+  gateway         = "172.20.0.1"
+  flask_ip        = "172.20.0.10"
+  mysql_ip        = "172.20.0.20"
+  external_port   = 12080
+  db_name         = "development_db"
+  db_user         = "development_user"
+  db_password     = "development_password"
+  app_source_path = "${path.module}/../app"
 }
 
-# ネットワーク
-resource "docker_network" "this" {
-  name = "${local.environment}_network"
-  ipam_config {
-    subnet  = "172.20.0.0/16"
-    gateway = "172.20.0.1"
-  }
+module "staging" {
+  source = "./modules/environment"
+
+  environment     = "staging"
+  subnet          = "172.20.1.0/24"
+  gateway         = "172.20.1.1"
+  flask_ip        = "172.20.1.10"
+  mysql_ip        = "172.20.1.20"
+  external_port   = 12081
+  db_name         = "staging_db"
+  db_user         = "staging_user"
+  db_password     = "staging_password"
+  app_source_path = "${path.module}/../app"
 }
 
-# Dockerイメージのビルド
-resource "docker_image" "flask_app" {
-  name = "flask-app:latest"
-  build {
-    context    = "${path.module}/../app"
-    dockerfile = "Dockerfile"
-  }
+module "qa" {
+  source = "./modules/environment"
+
+  environment     = "qa"
+  subnet          = "172.20.2.0/24"
+  gateway         = "172.20.2.1"
+  flask_ip        = "172.20.2.10"
+  mysql_ip        = "172.20.2.20"
+  external_port   = 12082
+  db_name         = "qa_db"
+  db_user         = "qa_user"
+  db_password     = "qa_password"
+  app_source_path = "${path.module}/../app"
 }
 
-resource "docker_image" "mysql" {
-  name = "mysql:8.4"
-}
+# =============================================================================
+# 共通bastion（全環境のネットワークに接続）
+# =============================================================================
 
 resource "docker_image" "bastion" {
   name = "bastion:latest"
@@ -52,79 +74,22 @@ resource "docker_image" "bastion" {
   }
 }
 
-# Dockerコンテナの起動
-resource "docker_container" "flask_app" {
-  name  = "flask-app"
-  image = docker_image.flask_app.image_id
-
-  labels {
-    label = "environment"
-    value = local.environment
-  }
-
-  networks_advanced {
-    name         = docker_network.this.name
-    ipv4_address = "172.20.0.10"
-  }
-
-  ports {
-    internal = 8000
-    external = 12080
-  }
-
-  env = [
-    "ENVIRONMENT=${local.environment}",
-    "API_PORT=8000",
-    "DB_HOST=db",
-    "DB_PORT=3306",
-    "DB_NAME=${local.db_name}",
-    "DB_USER=${local.db_user}",
-    "DB_PASSWORD=${local.db_password}",
-  ]
-}
-
-resource "docker_container" "mysql" {
-  name  = "db"
-  image = docker_image.mysql.image_id
-
-  labels {
-    label = "environment"
-    value = local.environment
-  }
-
-  networks_advanced {
-    name         = docker_network.this.name
-    ipv4_address = "172.20.0.20"
-  }
-
-  env = [
-    "MYSQL_ROOT_PASSWORD=${local.db_root_password}",
-    "MYSQL_DATABASE=${local.db_name}",
-    "MYSQL_USER=${local.db_user}",
-    "MYSQL_PASSWORD=${local.db_password}",
-  ]
-}
-
 resource "docker_container" "bastion" {
   name  = "bastion"
   image = docker_image.bastion.image_id
 
-  labels {
-    label = "environment"
-    value = local.environment
+  networks_advanced {
+    name         = module.dev.network_name
+    ipv4_address = "172.20.0.11"
   }
 
   networks_advanced {
-    name         = docker_network.this.name
-    ipv4_address = "172.20.0.11"
+    name         = module.staging.network_name
+    ipv4_address = "172.20.1.11"
   }
-}
 
-# 出力
-output "container_id" {
-  value = docker_container.flask_app.id
-}
-
-output "container_name" {
-  value = docker_container.flask_app.name
+  networks_advanced {
+    name         = module.qa.network_name
+    ipv4_address = "172.20.2.11"
+  }
 }
