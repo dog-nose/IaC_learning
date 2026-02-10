@@ -44,6 +44,14 @@ resource "docker_image" "mysql" {
   name = "mysql:8.4"
 }
 
+resource "docker_image" "bastion" {
+  name = "bastion:latest"
+  build {
+    context    = "${path.module}/../bastion"
+    dockerfile = "Dockerfile"
+  }
+}
+
 # Dockerコンテナの起動
 resource "docker_container" "flask_app" {
   name  = "flask-app"
@@ -95,6 +103,21 @@ resource "docker_container" "mysql" {
     "MYSQL_USER=${local.db_user}",
     "MYSQL_PASSWORD=${local.db_password}",
   ]
+}
+
+resource "docker_container" "bastion" {
+  name  = "bastion"
+  image = docker_image.bastion.image_id
+
+  labels {
+    label = "environment"
+    value = local.environment
+  }
+
+  networks_advanced {
+    name         = docker_network.this.name
+    ipv4_address = "172.20.0.11"
+  }
 }
 
 # 出力
